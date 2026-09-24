@@ -7,14 +7,14 @@ const HEADERS = {
   'Accept': 'application/rss+xml, application/xml, text/xml, */*'
 };
 
-// Функция безопасной очистки от невидимых символов и экранирования CDATA
+// Функция очистки спецсимволов для корректного XML
 function cleanCdata(text) {
   if (!text) return '';
   return text.replace(/\]\]>/g, ']]&gt;');
 }
 
-// Парсинг элементов из сторонних RSS
-function extractItems(xmlString, sourceName) {
+// Парсинг элементов без добавления префикса источника
+function extractItems(xmlString) {
   const items = [];
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let match;
@@ -42,7 +42,7 @@ function extractItems(xmlString, sourceName) {
 
     if (title && link) {
       items.push({
-        title: sourceName ? `[${sourceName}] ${title}` : title,
+        title, // Название в чистом виде, без префиксов
         link,
         description,
         pubDate
@@ -87,7 +87,7 @@ app.get('/lenta.xml', async (req, res) => {
   }
 });
 
-// 3. Валидная Объединенная лента (/all.xml)
+// 3. Объединенная лента без меток источников
 app.get('/all.xml', async (req, res) => {
   try {
     const [censorRes, lentaRes] = await Promise.allSettled([
@@ -99,18 +99,17 @@ app.get('/all.xml', async (req, res) => {
 
     if (censorRes.status === 'fulfilled' && censorRes.value.ok) {
       const xml = await censorRes.value.text();
-      allItems.push(...extractItems(xml, 'Цензор'));
+      allItems.push(...extractItems(xml));
     }
 
     if (lentaRes.status === 'fulfilled' && lentaRes.value.ok) {
       const xml = await lentaRes.value.text();
-      allItems.push(...extractItems(xml, 'Лента'));
+      allItems.push(...extractItems(xml));
     }
 
-    // Сортировка по дате (самые свежие сначала)
+    // Сортировка новостей по дате
     allItems.sort((a, b) => b.pubDate - a.pubDate);
 
-    // Сборка строго специфицированного RSS 2.0 XML
     let combinedXml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
